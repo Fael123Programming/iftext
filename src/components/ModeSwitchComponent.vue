@@ -8,14 +8,29 @@ const txa = ref(null)
 const loaderBoxShown = ref(false)
 const countChars = computed(() => text.value.length)
 const sentiment = ref({})
-const value = ref(0.0)
-const tweened = reactive({
-  value: 0
+const summarized = ref(false)
+const stars = ref(0)
+const tweenedStars = reactive({
+  stars: 0
 })
-watch(value, (n) => {
-  gsap.to(tweened, { duration: 2, value: Number(n) || 0.0 })
+watch(stars, (n) => {
+  gsap.to(tweenedStars, { duration: 2, stars: Number(n) || 0 })
+})
+const score = ref(0.0)
+const tweenedScore = reactive({
+  score: 0
+})
+watch(score, (n) => {
+  gsap.to(tweenedScore, { duration: 2, score: Number(n) || 0.0 })
 })
 const dialogShown = ref(false)
+
+function copyTextareaContentToClipboard() {
+  var textarea = document.querySelector('textarea')
+  textarea.select()
+  textarea.setSelectionRange(0, 99999)
+  navigator.clipboard.writeText(textarea.value)
+}
 
 function cleanTextarea() {
   text.value = ''
@@ -54,33 +69,71 @@ function adjustTooltipsPositions() {
 
 async function processTask() {
   loaderBoxShown.value = true
-  const data = {
-    text: text.value
-  }
-  try {
-    fetch('http://localhost:8000/sentiment-analysis', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(data)
-    })
-      .then((response) => {
-        if (!response.ok) {
-          window.alert('Invalid response')
-        } else {
-          return response.json()
-        }
-      })
-      .then((answer) => {
-        sentiment.value = answer
-        value.value = answer['score']
-        dialogShown.value = true
-      })
-  } catch (err) {
-    window.alert(`ERROR CAUGHT: ${err}`)
-  }
-  loaderBoxShown.value = false
+  setTimeout(() => {
+    const data = {
+      text: text.value
+    }
+    if (task.value === 'análise de sentimento') {
+      try {
+        fetch('http://localhost:8000/sentiment-analysis', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        })
+          .then((response) => {
+            if (!response.ok) {
+              window.alert(
+                'Ops... o seu texto é muito grande para processarmos!\nPedimos que tente com textos de até 2500 caracteres!'
+              )
+              focusOnTextarea()
+            } else {
+              return response.json()
+            }
+          })
+          .then((answer) => {
+            sentiment.value = answer
+            score.value = answer['score']
+            stars.value = answer['stars']
+            loaderBoxShown.value = false
+            dialogShown.value = true
+          })
+      } catch (err) {
+        window.alert(`ERROR CAUGHT: ${err}`)
+        loaderBoxShown.value = false
+      }
+    } else {
+      try {
+        fetch('http://localhost:8000/summarization', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        })
+          .then((response) => {
+            if (!response.ok) {
+              window.alert(
+                'Ops... o seu texto é muito grande para processarmos!\nPedimos que tente com textos de até 2500 caracteres!'
+              )
+              cleanTextarea()
+              focusOnTextarea()
+            } else {
+              return response.json()
+            }
+          })
+          .then((answer) => {
+            text.value = answer['summarization']
+            summarized.value = true
+            loaderBoxShown.value = false
+          })
+      } catch (err) {
+        window.alert(`ERROR CAUGHT: ${err}`)
+        loaderBoxShown.value = false
+      }
+    }
+  }, 1000)
 }
 
 function adjustShadowedBoxesHeight() {
@@ -101,9 +154,9 @@ function adjustShadowedBoxesHeight() {
 
 function closeDialog() {
   dialogShown.value = false
-  cleanTextarea()
   focusOnTextarea()
-  value.value = 0.0
+  score.value = 0.0
+  stars.value = 0
 }
 
 onMounted(() => {
@@ -148,7 +201,12 @@ onMounted(() => {
       >&nbsp;
     </div>
   </div>
-  <textarea ref="txa" v-model="text" :placeholder="'Digite aqui a notícia para ' + task">
+  <textarea
+    @input="summarized = false"
+    ref="txa"
+    v-model="text"
+    :placeholder="'Digite aqui a notícia para ' + task"
+  >
   </textarea>
   <span v-if="countChars > 0" class="countChars">
     {{ countChars }} {{ countChars > 1 ? 'caracteres' : 'caracter' }}</span
@@ -168,6 +226,13 @@ onMounted(() => {
       Limpar
     </button>
     <button
+      v-show="summarized && task != 'análise de sentimento'"
+      @click="copyTextareaContentToClipboard()"
+      class="btn blue"
+    >
+      Copiar &#x2398;
+    </button>
+    <button
       class="btn green"
       @click="processTask()"
       :disabled="countChars == 0"
@@ -176,10 +241,10 @@ onMounted(() => {
       {{ task == 'sumarização' ? 'Sumarizar' : 'Analisar' }}
     </button>
   </div>
-  <div v-show="loaderBoxShown" class="shadowed-box">
+  <div v-show="loaderBoxShown" class="loader-box">
     <LoaderComponent />
   </div>
-  <div v-show="dialogShown" class="shadowed-box">
+  <div @click="closeDialog()" v-show="dialogShown" class="shadowed-box">
     <dialog>
       <p class="score">Sentimento</p>
       <div class="terms-box">
@@ -188,13 +253,13 @@ onMounted(() => {
       <p>
         <span
           v-for="i in [1, 2, 3, 4, 5]"
-          :class="'star-' + (i <= sentiment['stars'] ? 'on' : 'off')"
+          :class="'star-' + (i <= tweenedStars.stars ? 'on' : 'off')"
           :key="i"
           >&#9733;</span
         >
       </p>
-      <p class="score-2">Pontuação de Confiança ({{ value.toPrecision(4) }})</p>
-      <p class="score-2">{{ (tweened.value * 100).toFixed(2) }} &percnt; de acurácia</p>
+      <p class="score-2">Pontuação de Confiança ({{ tweenedScore.score.toPrecision(4) }})</p>
+      <p class="score-2">{{ (tweenedScore.score * 100).toFixed(2) }} &percnt; de acurácia</p>
       <button class="btn blue" @click="closeDialog()">Ok</button>
     </dialog>
   </div>
@@ -232,25 +297,58 @@ onMounted(() => {
 }
 .star-on {
   color: gold;
+  display: inline-block;
   font-size: 28pt;
+  animation: growShrink 2s 1;
+  transition: transform 1s ease-in-out;
+}
+.star-on:hover {
+  transform: scale(1.5);
+}
+@keyframes growShrink {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(3);
+  }
 }
 .star-off {
+  display: inline-block;
   color: grey;
   font-size: 28pt;
+  transition: transform 1s ease-in-out;
+}
+.star-off:hover {
+  transform: scale(1.5);
 }
 dialog {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-around;
-  position: relative;
-  margin: auto;
-  top: 20%;
+  justify-content: center;
+  position: absolute;
+  top: 15%;
   border-radius: 12px;
   border: 1px solid grey;
   padding: 2rem;
   width: fit-content;
   height: fit-content;
+  transition: transform 0.5s ease-in-out;
+}
+dialog:hover {
+  transform: scale(1.5);
+}
+@media only screen and (max-device-width: 799px) {
+  dialog {
+    left: 15vw;
+  }
+}
+@media only screen and (min-device-width: 800px) {
+  dialog {
+    left: 40vw;
+  }
 }
 .shadowed-box {
   top: 0;
@@ -258,9 +356,21 @@ dialog {
   left: 0;
   right: 0;
   overflow: hidden;
-  width: 100%;
   background-color: rgba(0, 0, 0, 0.471);
-  position: absolute;
+  position: fixed;
+  z-index: 9999;
+}
+.loader-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  background-color: rgba(0, 0, 0, 0.5);
+  position: fixed;
   z-index: 9999;
 }
 .switch {
@@ -358,6 +468,7 @@ textarea {
 }
 .blue {
   background-color: rgb(0, 0, 255);
+  margin-top: 1rem;
 }
 .blue:hover {
   background-color: rgb(0, 0, 121);
@@ -381,5 +492,9 @@ textarea {
 }
 .tooltip:hover .tooltiptext {
   visibility: visible;
+}
+button {
+  font-weight: bold;
+  font-size: 14pt;
 }
 </style>
