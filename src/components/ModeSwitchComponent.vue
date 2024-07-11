@@ -1,36 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, reactive, watch } from 'vue'
-import gsap from 'gsap'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+
 import LoaderComponent from './LoaderComponent.vue'
+
+const router = useRouter()
 const task = ref('análise de sentimento')
 const text = ref('')
 const txa = ref(null)
 const loaderBoxShown = ref(false)
 const countChars = computed(() => text.value.length)
-const sentiment = ref({})
-const summarized = ref(false)
-const stars = ref(0)
-const tweenedStars = reactive({
-  stars: 0
-})
-watch(stars, (n) => {
-  gsap.to(tweenedStars, { duration: 2, stars: Number(n) || 0 })
-})
-const score = ref(0.0)
-const tweenedScore = reactive({
-  score: 0
-})
-watch(score, (n) => {
-  gsap.to(tweenedScore, { duration: 2, score: Number(n) || 0.0 })
-})
-const dialogShown = ref(false)
-
-function copyTextareaContentToClipboard() {
-  var textarea = document.querySelector('textarea')
-  textarea.select()
-  textarea.setSelectionRange(0, 99999)
-  navigator.clipboard.writeText(textarea.value)
-}
 
 function cleanTextarea() {
   text.value = ''
@@ -53,7 +32,7 @@ function switchTask(nextTask) {
 }
 
 function adjustTooltipsPositions() {
-  const K = 15
+  const K = 0
   let tooltips = document.querySelectorAll('.tooltip')
   for (let tooltip of tooltips) {
     tooltip.addEventListener('mouseover', function () {
@@ -70,9 +49,6 @@ function adjustTooltipsPositions() {
 async function processTask() {
   loaderBoxShown.value = true
   setTimeout(() => {
-    const data = {
-      text: text.value
-    }
     if (task.value === 'análise de sentimento') {
       try {
         fetch('http://localhost:8000/sentiment-analysis', {
@@ -80,7 +56,7 @@ async function processTask() {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(data)
+          body: JSON.stringify({ text: text.value })
         })
           .then((response) => {
             if (!response.ok) {
@@ -93,14 +69,14 @@ async function processTask() {
             }
           })
           .then((answer) => {
-            sentiment.value = answer
-            score.value = answer['score']
-            stars.value = answer['stars']
             loaderBoxShown.value = false
-            dialogShown.value = true
+            router.push({
+              name: 'Sentiment',
+              params: { sentiment: JSON.stringify(answer) }
+            })
           })
       } catch (err) {
-        window.alert(`ERROR CAUGHT: ${err}`)
+        window.alert(`Ops... houve erro!\nTente novamente mais tarde!\n${err}`)
         loaderBoxShown.value = false
       }
     } else {
@@ -110,7 +86,7 @@ async function processTask() {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(data)
+          body: JSON.stringify({ text: text.value })
         })
           .then((response) => {
             if (!response.ok) {
@@ -124,12 +100,16 @@ async function processTask() {
             }
           })
           .then((answer) => {
-            text.value = answer['summarization']
-            summarized.value = true
             loaderBoxShown.value = false
+            router.push({
+              name: 'Summarization',
+              params: {
+                summarization: answer
+              }
+            })
           })
       } catch (err) {
-        window.alert(`ERROR CAUGHT: ${err}`)
+        window.alert(`Ops... houve erro!\nTente novamente mais tarde!\n${err}`)
         loaderBoxShown.value = false
       }
     }
@@ -150,13 +130,6 @@ function adjustShadowedBoxesHeight() {
   for (let shadowedBox of shadowedBoxes) {
     shadowedBox.style.height = height + 100 + 'px'
   }
-}
-
-function closeDialog() {
-  dialogShown.value = false
-  focusOnTextarea()
-  score.value = 0.0
-  stars.value = 0
 }
 
 onMounted(() => {
@@ -192,9 +165,7 @@ onMounted(() => {
       <span class="mod-title">Sumarização</span> &nbsp;<span class="tooltip"
         >&#9432;<span class="tooltiptext"
           >Para saber mais sobre o modelo de IA utilizado nesta sumarização, visite
-          <a
-            href="https://huggingface.co/nlptown/bert-base-multilingual-uncased-sentiment"
-            target="_blank"
+          <a href="https://huggingface.co/facebook/bart-large-cnn" target="_blank"
             >https://huggingface.co/facebook/bart-large-cnn</a
           ></span
         ></span
@@ -220,17 +191,11 @@ onMounted(() => {
         () => {
           cleanTextarea()
           focusOnTextarea()
+          summarized = false
         }
       "
     >
       Limpar
-    </button>
-    <button
-      v-show="summarized && task != 'análise de sentimento'"
-      @click="copyTextareaContentToClipboard()"
-      class="btn blue"
-    >
-      Copiar &#x2398;
     </button>
     <button
       class="btn green"
@@ -244,133 +209,22 @@ onMounted(() => {
   <div v-show="loaderBoxShown" class="loader-box">
     <LoaderComponent />
   </div>
-  <div @click="closeDialog()" v-show="dialogShown" class="shadowed-box">
-    <dialog>
-      <p class="score">Sentimento</p>
-      <div class="terms-box">
-        <div class="terms"><span>Negativo</span><span>Positivo</span></div>
-      </div>
-      <p>
-        <span
-          v-for="i in [1, 2, 3, 4, 5]"
-          :class="'star-' + (i <= tweenedStars.stars ? 'on' : 'off')"
-          :key="i"
-          >&#9733;</span
-        >
-      </p>
-      <p class="score-2">Pontuação de Confiança ({{ tweenedScore.score.toPrecision(4) }})</p>
-      <p class="score-2">{{ (tweenedScore.score * 100).toFixed(2) }} &percnt; de acurácia</p>
-      <button class="btn blue" @click="closeDialog()">Ok</button>
-    </dialog>
-  </div>
 </template>
 
 <style scoped>
-.terms {
-  display: flex;
-  flex: 1;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-}
-.terms span {
-  font-size: 8pt;
-  font-weight: bold;
-  transform: rotate(-45deg);
-}
-.terms-box {
-  display: flex;
-  flex: 1;
-  padding: 1rem;
-  width: 100%;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-.score {
-  font-weight: bold;
-  font-size: 22pt;
-}
-.score-2 {
-  font-weight: bold;
-  font-size: 10pt;
-}
-.star-on {
-  color: gold;
-  display: inline-block;
-  font-size: 28pt;
-  animation: growShrink 2s 1;
-  transition: transform 1s ease-in-out;
-}
-.star-on:hover {
-  transform: scale(1.5);
-}
-@keyframes growShrink {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(3);
-  }
-}
-.star-off {
-  display: inline-block;
-  color: grey;
-  font-size: 28pt;
-  transition: transform 1s ease-in-out;
-}
-.star-off:hover {
-  transform: scale(1.5);
-}
-dialog {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  position: absolute;
-  top: 15%;
-  border-radius: 12px;
-  border: 1px solid grey;
-  padding: 2rem;
-  width: fit-content;
-  height: fit-content;
-  transition: transform 0.5s ease-in-out;
-}
-dialog:hover {
-  transform: scale(1.5);
-}
-@media only screen and (max-device-width: 799px) {
-  dialog {
-    left: 15vw;
-  }
-}
-@media only screen and (min-device-width: 800px) {
-  dialog {
-    left: 40vw;
-  }
-}
-.shadowed-box {
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  overflow: hidden;
-  background-color: rgba(0, 0, 0, 0.471);
-  position: fixed;
-  z-index: 9999;
-}
 .loader-box {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   top: 0;
   bottom: 0;
   left: 0;
   right: 0;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   background-color: rgba(0, 0, 0, 0.5);
-  position: fixed;
+  position: absolute;
   z-index: 9999;
 }
 .switch {
@@ -466,13 +320,6 @@ textarea {
 .green:hover {
   background-color: #195128;
 }
-.blue {
-  background-color: rgb(0, 0, 255);
-  margin-top: 1rem;
-}
-.blue:hover {
-  background-color: rgb(0, 0, 121);
-}
 .tooltip .tooltiptext {
   margin-left: auto;
   margin-right: auto;
@@ -492,9 +339,5 @@ textarea {
 }
 .tooltip:hover .tooltiptext {
   visibility: visible;
-}
-button {
-  font-weight: bold;
-  font-size: 14pt;
 }
 </style>

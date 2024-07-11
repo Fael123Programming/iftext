@@ -39,7 +39,7 @@ a {
 }
 p {
   text-align: justify;
-  font-size: 12pt;
+  font-size: 14pt;
 }
 p::first-letter {
   margin-left: 2rem;
